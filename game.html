@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Endless Runner</title>
+    <style>
+        body { margin: 0; background-color: #000; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        canvas { display: block; }
+        #info-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            color: white;
+            padding: 15px;
+            box-sizing: border-box;
+            text-align: center;
+            user-select: none;
+            z-index: 10;
+        }
+        #score {
+            font-size: 2em;
+            font-weight: bold;
+        }
+        #instructions {
+            font-size: 1em;
+            margin-top: 10px;
+        }
+        #game-over-screen, #loading-screen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            text-align: center;
+            background-color: rgba(0,0,0,0.7);
+            padding: 40px;
+            border-radius: 15px;
+            z-index: 20;
+        }
+        #loading-screen {
+            display: block; /* Shown by default */
+        }
+        #loading-screen h1 {
+             font-size: 2em;
+        }
+        #game-over-screen {
+            display: none; /* Hidden by default */
+        }
+        #game-over-screen h1 {
+            font-size: 3em;
+            margin: 0;
+            color: #ff4136; /* A vibrant red */
+        }
+        #final-score {
+            font-size: 1.5em;
+            margin: 20px 0;
+        }
+        #restart-button {
+            padding: 15px 30px;
+            font-size: 1.2em;
+            cursor: pointer;
+            border: none;
+            border-radius: 10px;
+            background-color: #0074d9; /* A vibrant blue */
+            color: white;
+            transition: background-color 0.3s;
+        }
+        #restart-button:hover {
+            background-color: #009dff;
+        }
+    </style>
+</head>
+<body>
+    <div id="info-container">
+        <div id="score">SCORE: 0</div>
+        <div id="instructions">Use Arrow Keys or Tap Left/Right to Move</div>
+    </div>
+
+    <div id="loading-screen">
+        <h1>LOADING...</h1>
+    </div>
+
+    <div id="game-over-screen">
+        <h1>GAME OVER</h1>
+        <div id="final-score">YOUR SCORE: 0</div>
+        <button id="restart-button">RESTART</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Add GLTF and DRACO loaders for 3D models -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/DRACOLoader.js"></script>
+
+    <script>
+        // --- SCENE SETUP ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x87CEEB, 1, 150); // Add fog for atmospheric depth
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x87CEEB); // Sky blue background
+        document.body.appendChild(renderer.domElement);
+
+        // --- GAME ELEMENTS ---
+        let player, ground, obstacles = [], lanes = [-2.5, 0, 2.5];
+        let currentLane = 1;
+        let score = 0;
+        let gameSpeed = 0.1;
+        let isGameOver = false;
+        let animationMixer; // For handling player animation
+        const clock = new THREE.Clock();
+        let robotGltf = null; // To store the loaded model and reuse it
+        
+        // --- SCENERY ELEMENTS ---
+        let birds = [];
+        let clouds = [];
+        let trees = [];
+
+        // UI Elements
+        const scoreElement = document.getElementById('score');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreElement = document.getElementById('final-score');
+        const restartButton = document.getElementById('restart-button');
+        const loadingScreen = document.getElementById('loading-screen');
+        
+        // --- INITIALIZE GAME ---
+        function init() {
+            createGround();
+            createLights();
+            createScenery(); // New function for background elements
+            createPlayer();
+            
+            document.addEventListener('keydown', handleKeyPress);
+            document.addEventListener('touchstart', handleTouch, { passive: false });
+            restartButton.addEventListener('click', restartGame);
+        }
+
+        // --- CREATE GAME OBJECTS ---
+        function createPlayer() {
+            const loader = new THREE.GLTFLoader();
+            const dracoLoader = new THREE.DRACOLoader();
+            dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+            loader.setDRACOLoader(dracoLoader);
+
+            loader.load(
+                'https://threejs.org/examples/models/gltf/RobotExpressive/RobotExpressive.glb',
+                function (gltf) {
+                    robotGltf = gltf; // Store the loaded gltf
+                    player = gltf.scene;
+                    player.scale.set(0.4, 0.4, 0.4);
+                    player.position.set(lanes[currentLane], 0, 5);
+                    player.rotation.y = Math.PI;
+                    scene.add(player);
+
+                    animationMixer = new THREE.AnimationMixer(player);
+                    const runningAction = animationMixer.clipAction(gltf.animations.find(clip => clip.name === 'Running'));
+                    runningAction.play();
+
+                    finishInitialization();
+                },
+                undefined,
+                function (error) {
+                    console.error('An error happened while loading the model:', error);
+                    // Fallback to a simple cube if model fails to load
+                    const geometry = new THREE.BoxGeometry(1, 1, 1);
+                    const material = new THREE.MeshStandardMaterial({ color: 0xff00ff });
+                    player = new THREE.Mesh(geometry, material);
+                    player.position.set(lanes[currentLane], 0.5, 5);
+                    scene.add(player);
+                    finishInitialization();
+                }
+            );
+        }
+
+        function finishInitialization() {
+            spawnInitialObstacles();
+
+            camera.position.set(0, 4, 10);
+            camera.lookAt(new THREE.Vector3(player.position.x, player.position.y + 1, player.position.z));
+            
+            loadingScreen.style.display = 'none';
+            animate();
+        }
+
+
+        function createGround() {
+            // Create a canvas element to draw the rainbow gradient
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            // Change canvas dimensions for a horizontal gradient
+            canvas.width = 256; 
+            canvas.height = 1;
+
+            // Create a linear gradient that spans the width of the canvas
+            const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
+            gradient.addColorStop(0, '#ff0000');     // Red
+            gradient.addColorStop(1/6, '#ff7f00');  // Orange
+            gradient.addColorStop(2/6, '#ffff00');  // Yellow
+            gradient.addColorStop(3/6, '#00ff00');  // Green
+            gradient.addColorStop(4/6, '#0000ff');  // Blue
+            gradient.addColorStop(5/6, '#4b0082');  // Indigo
+            gradient.addColorStop(1, '#8f00ff');     // Violet
+
+            // Fill the canvas with the rainbow gradient
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Create a Three.js texture from the canvas
+            const groundTexture = new THREE.CanvasTexture(canvas);
+            
+            // Set the texture to repeat along the path
+            groundTexture.wrapS = THREE.RepeatWrapping;
+            groundTexture.wrapT = THREE.RepeatWrapping;
+            // Repeat the texture many times across the width to create vertical stripes
+            groundTexture.repeat.set(50, 1); 
+
+            const groundGeometry = new THREE.PlaneGeometry(10, 200); 
+            const groundMaterial = new THREE.MeshStandardMaterial({ map: groundTexture });
+            ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            ground.position.y = -0.01; // Slightly lower to prevent visual glitches with the player
+            scene.add(ground);
+        }
+
+        function createLights() {
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(0, 20, -20);
+            scene.add(directionalLight);
+        }
+        
+        function createObstacle() {
+            const geometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+            // Switched back to boxes with a new vibrant red color
+            const material = new THREE.MeshStandardMaterial({ color: 0xff4136 });
+            const obstacle = new THREE.Mesh(geometry, material);
+
+            const randomLane = Math.floor(Math.random() * 3);
+            // Positioned at y=0.75 so it sits on top of the ground plane
+            obstacle.position.set(lanes[randomLane], 0.75, -50);
+            obstacles.push(obstacle);
+            scene.add(obstacle);
+        }
+
+        function spawnInitialObstacles() {
+            for(let i=0; i<5; i++){
+                createObstacle();
+                // Reverted to reference the obstacle mesh directly
+                if (obstacles.length > 0) {
+                   obstacles[obstacles.length-1].position.z = -20 - (i * 15);
+                }
+            }
+        }
+        
+        // --- SCENERY CREATION ---
+        function createScenery() {
+            // Create Mountains
+            const mountainMaterial = new THREE.MeshStandardMaterial({ color: 0x228B22 }); // Forest Green
+            for (let i = 0; i < 20; i++) {
+                const height = Math.random() * 20 + 5;
+                const width = Math.random() * 20 + 10;
+                const mountainGeom = new THREE.ConeGeometry(width, height, 4);
+                const mountain = new THREE.Mesh(mountainGeom, mountainMaterial);
+                mountain.position.set(
+                    (Math.random() - 0.5) * 200,
+                    height / 2 - 2,
+                    -100 - (Math.random() * 50)
+                );
+                mountain.rotation.y = Math.random() * Math.PI;
+                scene.add(mountain);
+            }
+
+            // Create Clouds
+            const cloudMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+            for (let i = 0; i < 15; i++) {
+                const cloud = new THREE.Group();
+                for (let j = 0; j < 5; j++) {
+                    const sphereGeom = new THREE.SphereGeometry(Math.random() * 5 + 2, 8, 8);
+                    const sphere = new THREE.Mesh(sphereGeom, cloudMaterial);
+                    sphere.position.set(
+                        (Math.random() - 0.5) * 10,
+                        (Math.random() - 0.5) * 3,
+                        (Math.random() - 0.5) * 5
+                    );
+                    cloud.add(sphere);
+                }
+                cloud.position.set(
+                    (Math.random() - 0.5) * 150,
+                    Math.random() * 15 + 20,
+                    -80 - (Math.random() * 40)
+                );
+                clouds.push(cloud);
+                scene.add(cloud);
+            }
+
+            // Create Birds
+            const birdMaterial = new THREE.MeshBasicMaterial({ color: 0x111111 });
+            for (let i = 0; i < 5; i++) {
+                const birdGeom = new THREE.ConeGeometry(0.2, 1, 3);
+                const bird = new THREE.Mesh(birdGeom, birdMaterial);
+                bird.position.set(
+                    -50 - Math.random() * 50,
+                    20 + Math.random() * 10,
+                    -50 - Math.random() * 50
+                );
+                birds.push(bird);
+                scene.add(bird);
+            }
+
+            // Create Trees
+            const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 }); // Brown
+            const leavesMaterial = new THREE.MeshStandardMaterial({ color: 0x006400 }); // Dark Green
+            const trunkGeom = new THREE.CylinderGeometry(0.2, 0.3, 2);
+            const leavesGeom = new THREE.ConeGeometry(1, 4, 6);
+
+            for (let i = 0; i < 40; i++) {
+                // Tree on the left
+                const treeLeft = new THREE.Group();
+                const trunkLeft = new THREE.Mesh(trunkGeom, trunkMaterial);
+                trunkLeft.position.y = 1;
+                const leavesLeft = new THREE.Mesh(leavesGeom, leavesMaterial);
+                leavesLeft.position.y = 3;
+                treeLeft.add(trunkLeft);
+                treeLeft.add(leavesLeft);
+                treeLeft.position.set(-6 - Math.random() * 2, 0, -i * 5);
+                scene.add(treeLeft);
+                trees.push(treeLeft);
+
+                // Tree on the right
+                const treeRight = new THREE.Group();
+                const trunkRight = new THREE.Mesh(trunkGeom, trunkMaterial);
+                trunkRight.position.y = 1;
+                const leavesRight = new THREE.Mesh(leavesGeom, leavesMaterial);
+                leavesRight.position.y = 3;
+                treeRight.add(trunkRight);
+                treeRight.add(leavesRight);
+                treeRight.position.set(6 + Math.random() * 2, 0, -i * 5);
+                scene.add(treeRight);
+                trees.push(treeRight);
+            }
+        }
+
+        // --- GAME LOGIC ---
+        function handleKeyPress(event) {
+            if (isGameOver || !player) return;
+
+            if (event.key === 'ArrowLeft') {
+                if (currentLane > 0) currentLane--;
+            } else if (event.key === 'ArrowRight') {
+                if (currentLane < 2) currentLane++;
+            }
+            player.position.x = lanes[currentLane];
+        }
+
+        function handleTouch(event) {
+            if (isGameOver || !player) return;
+            
+            // Prevent the browser from doing its default actions (like scrolling)
+            event.preventDefault();
+
+            // Get the position of the first touch
+            const touchX = event.touches[0].clientX;
+
+            // Move left if touching the left half of the screen
+            if (touchX < window.innerWidth / 2) {
+                if (currentLane > 0) currentLane--;
+            } 
+            // Move right if touching the right half
+            else {
+                if (currentLane < 2) currentLane++;
+            }
+            player.position.x = lanes[currentLane];
+        }
+
+        function updateTrees() {
+            trees.forEach(tree => {
+                tree.position.z += gameSpeed;
+                // If a tree goes past the camera, reposition it at the back
+                if (tree.position.z > 15) {
+                    tree.position.z -= 200; // The total length of the tree line is 40*5=200
+                }
+            });
+        }
+
+        function updateObstacles() {
+            obstacles.forEach(obstacle => {
+                obstacle.position.z += gameSpeed;
+                if (obstacle.position.z > 15) {
+                    const randomLane = Math.floor(Math.random() * 3);
+                    obstacle.position.set(lanes[randomLane], 0.75, -80 - Math.random() * 20);
+                }
+            });
+        }
+
+        function animateScenery() {
+             birds.forEach(bird => {
+                bird.position.x += 0.05; // Fly across the screen
+                bird.position.z += 0.02;
+                if (bird.position.x > 100) {
+                    bird.position.x = -100; // Reset position
+                }
+            });
+            clouds.forEach(cloud => {
+                cloud.position.x += 0.01; // Slowly drift
+                if(cloud.position.x > 120) {
+                    cloud.position.x = -120;
+                }
+            });
+        }
+
+        function checkCollisions() {
+            if (!player) return;
+            const playerBox = new THREE.Box3().setFromObject(player);
+            playerBox.min.addScalar(0.2);
+            playerBox.max.addScalar(-0.2);
+
+            obstacles.forEach(obstacle => {
+                const obstacleBox = new THREE.Box3().setFromObject(obstacle);
+                if (playerBox.intersectsBox(obstacleBox)) {
+                    endGame();
+                }
+            });
+        }
+        
+        function updateScore() {
+            if (!isGameOver) {
+                score += 1;
+                gameSpeed += 0.00005;
+                scoreElement.textContent = `SCORE: ${Math.floor(score)}`;
+            }
+        }
+
+        function endGame() {
+            isGameOver = true;
+            gameSpeed = 0;
+            if(animationMixer) {
+                animationMixer.timeScale = 0;
+            }
+            finalScoreElement.textContent = `YOUR SCORE: ${Math.floor(score)}`;
+            gameOverScreen.style.display = 'block';
+        }
+
+        function restartGame() {
+            isGameOver = false;
+            score = 0;
+            gameSpeed = 0.1;
+            currentLane = 1;
+            if (player) {
+                player.position.x = lanes[currentLane];
+            }
+            if(animationMixer) {
+                animationMixer.timeScale = 1;
+            }
+            
+            obstacles.forEach(obs => scene.remove(obs));
+            obstacles = [];
+            spawnInitialObstacles();
+            
+            gameOverScreen.style.display = 'none';
+            scoreElement.textContent = `SCORE: 0`;
+        }
+
+        // --- ANIMATION LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            if (animationMixer) {
+                animationMixer.update(delta);
+            }
+
+            if (!isGameOver) {
+                // Removed obstacle animation mixer update
+                updateObstacles();
+                updateTrees();
+                checkCollisions();
+                updateScore();
+                animateScenery(); // Animate the new background elements
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- RESIZE HANDLER ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // --- START GAME ---
+        init();
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
