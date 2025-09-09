@@ -109,6 +109,9 @@
     </style>
 </head>
 <body>
+    <!-- Add the audio element for background music -->
+    <audio id="background-music" loop src="background_music.mp3"></audio>
+
     <div id="info-container">
         <div id="score">SCORE: 0</div>
         <div id="instructions">Use Arrow Keys or Tap Left/Right to Move</div>
@@ -158,8 +161,10 @@
         const clock = new THREE.Clock();
         let playerName = '';
         
-        // --- SCENERY ELEMENTS ---
+        // --- SCENERY & AUDIO ELEMENTS ---
         let birds = [], clouds = [], trees = [];
+        const backgroundMusic = document.getElementById('background-music');
+        let tempoInterval;
 
         // UI Elements
         const scoreElement = document.getElementById('score');
@@ -179,6 +184,23 @@
             playerName = playerNameInput.value || 'Player';
             startScreen.style.display = 'none';
             loadingScreen.style.display = 'block';
+            
+            // Start music and tempo increase
+            backgroundMusic.playbackRate = 1.0;
+            const playPromise = backgroundMusic.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.warn("Music could not be played. Make sure 'background_music.mp3' is in the project folder.", error);
+                });
+            }
+
+            clearInterval(tempoInterval);
+            tempoInterval = setInterval(() => {
+                if (!isGameOver) {
+                    backgroundMusic.playbackRate += 0.05;
+                }
+            }, 10000); // Every 10 seconds
+
             init();
         }
 
@@ -437,6 +459,11 @@
             gameSpeed = 0;
             if(animationMixer) animationMixer.timeScale = 0;
             
+            // Stop music and tempo increase
+            backgroundMusic.pause();
+            backgroundMusic.currentTime = 0;
+            clearInterval(tempoInterval);
+            
             infoContainer.style.display = 'none';
             saveScore(playerName, score);
             displayLeaderboard();
@@ -460,6 +487,23 @@
             gameOverScreen.style.display = 'none';
             infoContainer.style.display = 'block';
             scoreElement.textContent = `SCORE: 0`;
+
+            // Restart music and tempo increase
+            backgroundMusic.playbackRate = 1.0;
+            const playPromise = backgroundMusic.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.warn("Music could not be played on restart.", error);
+                });
+            }
+
+            clearInterval(tempoInterval); // Clear old interval
+            tempoInterval = setInterval(() => {
+                if (!isGameOver) {
+                    backgroundMusic.playbackRate += 0.05;
+                }
+            }, 10000);
+
             animate(); // Restart the animation loop
         }
 
@@ -486,7 +530,7 @@
             }
             scores.forEach(score => {
                 const li = document.createElement('li');
-                li.textContent = `${score.name} = ${score.score}`;
+                li.textContent = `${score.name} - ${score.score}`;
                 leaderboardElement.appendChild(li);
             });
         }
