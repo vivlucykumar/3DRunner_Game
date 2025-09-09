@@ -20,6 +20,16 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 st.title("🏃‍♂️ 3D Endless Runner")
 st.write("🎮🎮A simple 3D game Made By Vivek B Kumar... 🎮🎮")
 
+# --- Function to get audio file as a base64 string ---
+def get_audio_base64(file_path):
+    """
+    Reads an audio file and returns its base64 encoded string.
+    """
+    with open(file_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+
 # --- Music Player with Play/Pause Button ---
 audio_folder = "assets"
 music_file = None
