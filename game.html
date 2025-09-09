@@ -186,20 +186,22 @@
             loadingScreen.style.display = 'block';
             
             // Start music and tempo increase
-            backgroundMusic.playbackRate = 1.0;
-            const playPromise = backgroundMusic.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.warn("Music could not be played. Make sure 'background_music.mp3' is in the project folder.", error);
-                });
-            }
-
-            clearInterval(tempoInterval);
-            tempoInterval = setInterval(() => {
-                if (!isGameOver) {
-                    backgroundMusic.playbackRate += 0.05;
+            if (backgroundMusic) {
+                backgroundMusic.playbackRate = 1.0;
+                const playPromise = backgroundMusic.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        console.warn("Music could not be played. Make sure 'background_music.mp3' is in the project folder.", error);
+                    });
                 }
-            }, 10000); // Every 10 seconds
+
+                clearInterval(tempoInterval);
+                tempoInterval = setInterval(() => {
+                    if (!isGameOver) {
+                        backgroundMusic.playbackRate += 0.05;
+                    }
+                }, 10000); // Every 10 seconds
+            }
 
             init();
         }
@@ -460,8 +462,10 @@
             if(animationMixer) animationMixer.timeScale = 0;
             
             // Stop music and tempo increase
-            backgroundMusic.pause();
-            backgroundMusic.currentTime = 0;
+            if(backgroundMusic) {
+                backgroundMusic.pause();
+                backgroundMusic.currentTime = 0;
+            }
             clearInterval(tempoInterval);
             
             infoContainer.style.display = 'none';
@@ -489,21 +493,23 @@
             scoreElement.textContent = `SCORE: 0`;
 
             // Restart music and tempo increase
-            backgroundMusic.playbackRate = 1.0;
-            const playPromise = backgroundMusic.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.warn("Music could not be played on restart.", error);
-                });
-            }
-
-            clearInterval(tempoInterval); // Clear old interval
-            tempoInterval = setInterval(() => {
-                if (!isGameOver) {
-                    backgroundMusic.playbackRate += 0.05;
+            if(backgroundMusic) {
+                backgroundMusic.playbackRate = 1.0;
+                const playPromise = backgroundMusic.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        console.warn("Music could not be played on restart.", error);
+                    });
                 }
-            }, 10000);
 
+                clearInterval(tempoInterval); // Clear old interval
+                tempoInterval = setInterval(() => {
+                    if (!isGameOver && !backgroundMusic.paused) {
+                        backgroundMusic.playbackRate += 0.05;
+                    }
+                }, 10000);
+            }
+            
             animate(); // Restart the animation loop
         }
 
@@ -559,13 +565,15 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // --- START GAME LISTENER ---
+        // --- EVENT LISTENERS ---
         startButton.addEventListener('click', startGame);
+        
         playerNameInput.addEventListener('keyup', (event) => {
             if (event.key === 'Enter') {
                 startGame();
             }
         });
+
     </script>
 </body>
 </html>
